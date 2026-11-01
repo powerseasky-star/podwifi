@@ -1,0 +1,92 @@
+# iOS 云端编译流水线（GitHub Actions）
+#
+# 产出：未签名的 PodWifi-unsigned.ipa
+# 装机：在 Windows 上用 Sideloadly / AltStore，用你自己的 Apple ID 自签后装到 iPhone
+#       （免费 Apple ID 的签名 7 天过期，到期重签即可；付费开发者账号 1 年）
+#
+# ⚠️ 重要：private 仓库跑 macOS runner 会按 **10 倍** 计额度，且 GitHub 要求账号已绑定支付方式；
+#          public 仓库的 macOS runner **完全免费且不限量**。
+#          本仓库只有 App 源码、不含任何密钥，建议公开发布最省事。
+#
+# 触发方式：push 到 main，或在 Actions 页面点 "Run workflow"
+
+name: ios-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'PodWifi/**'
+      - 'project.yml'
+      - '.github/workflows/ios-build.yml'
+
+# 同一分支只保留最新一次运行，避免连续 push 烧额度
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # macos-15 自带 Xcode 16.x；若将来被弃用，改成 macos-latest 即可
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          sw_vers
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project PodWifi.xcodeproj \
+            -scheme PodWifi \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+
+      - name: Verify .app exists
+        run: |
+          APP="build/Build/Products/Release-iphoneos/PodWifi.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::未生成 PodWifi.app，构建失败"
+            exit 1
+          fi
+          ls -la "$APP"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+
+      - name: Package unsigned ipa
+        run: |
+          mkdir -p out/Payload
+          cp -R build/Build/Products/Release-iphoneos/PodWifi.app out/Payload/
+          cd out
+          zip -qry PodWifi-unsigned.ipa Payload
+          ls -lh PodWifi-unsigned.ipa
+          shasum -a 256 PodWifi-unsigned.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PodWifi-ipa
+          path: out/PodWifi-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

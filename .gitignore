@@ -1,0 +1,25 @@
+# ---- 构建产物 ----
+build/
+out/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/
+
+# XcodeGen 生成的工程（每次 CI 重新生成，不入库）
+PodWifi.xcodeproj/
+
+# ---- 系统/编辑器 ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- 绝不允许入库的凭据 ----
+token.txt
+gh_token.txt
+repo.txt
+*.p12
+*.mobileprovision
+*.p7b
+*.cer

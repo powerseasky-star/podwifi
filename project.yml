@@ -1,0 +1,25 @@
+name: PodWifi
+options:
+  bundleIdPrefix: com.mars
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+targets:
+  PodWifi:
+    type: application
+    platform: iOS
+    sources:
+      - path: PodWifi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mars.podwifi
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: PodWifi/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_BITCODE: NO
