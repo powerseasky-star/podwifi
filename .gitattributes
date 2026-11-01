@@ -1,0 +1,8 @@
+# 统一行尾：仓库内一律 LF，Windows 批处理单独用 CRLF
+# 否则 Windows 提交的文件到了 macOS runner 上可能带 CRLF，造成脚本/配置解析异常
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.ipa binary
