@@ -52,3 +52,4 @@ verify_v060_*.py
 check_symbols_*out_*.txt
 verify_v060_out_*.txt
 patch_project_version_v*.py
+_commitmsg_*.txt
