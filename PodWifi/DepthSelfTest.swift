@@ -75,7 +75,13 @@ enum DepthSelfTest {
         let t0 = Date()
         var rows: [Row] = []
 
-        for halfD in [10, 16, 24, 32, 40] {
+        // 只测当前 maxDisparity 能覆盖的档位。
+        // （否则用户把 maxD 调到 16 时，24/32/40 三档必然"失败"——那是量程不够，不是算法错，
+        //   会把人误导成"参数坏了"，反而不敢调。）
+        var targets = [10, 16, 24, 32, 40].filter { $0 <= params.maxDisparity }
+        if targets.isEmpty { targets = [max(4, params.maxDisparity / 2)] }
+
+        for halfD in targets {
             let shift = halfD * 2                    // 全分辨率位移
             let (l, r) = synthPair(shift: shift)
             var got: Int32 = -1
