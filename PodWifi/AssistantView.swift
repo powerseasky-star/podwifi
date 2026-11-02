@@ -46,8 +46,15 @@ struct AssistantView: View {
             .font(.caption)
             .padding(.horizontal)
 
-            // 视觉：YOLO 检测 + 双目↔ToF 融合深度 + 避障播报（来自「无线」页的收流）
+            // 视觉：相机自动识别 + YOLO 检测 + 双目↔ToF 融合深度 + 避障播报
             VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("相机：\(vision.cameraText)")
+                        .lineLimit(1)
+                        .foregroundColor(vision.camera.profile.depthCapable ? .green : .orange)
+                    Spacer()
+                    Text(vision.depthModeText).lineLimit(1)
+                }
                 HStack(spacing: 8) {
                     Text(vision.ready ? "识别：\(vision.detsText)" : "识别：未加载")
                         .lineLimit(1)

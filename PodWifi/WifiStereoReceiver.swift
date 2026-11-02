@@ -29,9 +29,34 @@ import CoreGraphics
 import ImageIO
 import VideoToolbox
 
+/// 一帧视频（协议 v3）：把"左右眼"和"这帧的元信息"一起交给上层
+///
+/// 🔴 v0.7.0 修正了一个真实说谎：以前单目时回调 `onStereoFrame(full, full, ts)`，
+/// 即**用左眼冒充右眼**。下游 VisionHub 看到"有右眼"就跑 SAD，
+/// 结果在一张和自身完全相同的图上搜视差——恒为 0、白烧 5fps×480p 的 CPU，
+/// 而且深度栏永远显示"无有效视差"，看起来像算法坏了。
+/// 现在 `right == nil` 就是"没有右眼"，语义诚实，下游自然跳过。
+public struct PodFrame {
+    public let left: CVPixelBuffer
+    /// 单目时为 nil（不再复制左眼）
+    public let right: CVPixelBuffer?
+    public let ts: UInt32
+    /// 帧头 flags：bit0=1 左右并排双目
+    public let flags: UInt8
+    /// **整帧**宽高（并排双目时是 2×单眼宽）
+    public let frameW: Int
+    public let frameH: Int
+
+    public var isSideBySide: Bool { flags & 0x01 != 0 }
+}
+
 public final class WifiStereoReceiver {
 
-    /// 左右眼画面回调（BGRA CVPixelBuffer，按协议已切好）
+    /// 一帧视频（左右眼 + 元信息）。单目时 right == nil
+    public var onFrame: ((PodFrame) -> Void)?
+    /// 协议 v3：相机身份声明（codec=0x13 CAMINFO），连上后立刻来一次、之后约 5s 一次
+    public var onCamInfo: ((PodCamInfo) -> Void)?
+    /// 兼容旧调用点：只要左右眼（单目时 right 用 left 顶替，仅用于纯显示）
     public var onStereoFrame: ((CVPixelBuffer, CVPixelBuffer, UInt32) -> Void)?
     /// 状态回调：true=起流，false=断开/异常
     public var onState: ((Bool, String) -> Void)?
@@ -221,24 +246,46 @@ public final class WifiStereoReceiver {
             if let s = String(data: payload, encoding: .utf8) { onNavText?(s) }
         case 0x12:   // EVENT
             if let s = String(data: payload, encoding: .utf8) { onEvent?(s) }
+        case 0x13:   // CAMINFO（协议 v3）：相机身份声明
+            if let s = String(data: payload, encoding: .utf8) {
+                if let info = PodCamInfo.parse(s) {
+                    onCamInfo?(info)
+                } else {
+                    onEvent?("CAMINFO 解析失败：\(s.prefix(120))")
+                }
+            }
         default:
             break
         }
     }
 
-    /// 按协议切左右眼后回调
+    /// 按协议切左右眼后回调（v3：单目时 right = nil，不再用左眼顶替）
     private func emit(_ full: CVPixelBuffer, flags: UInt8, ts: UInt32) {
         let w = CVPixelBufferGetWidth(full)
         let h = CVPixelBufferGetHeight(full)
         guard w > 4 else { return }
+
+        var left: CVPixelBuffer = full
+        var right: CVPixelBuffer?
+
         if flags & 0x01 != 0 {
-            let half = w / 2
-            guard let l = WifiStereoReceiver.crop(full, x: 0, w: half, h: h),
-                  let r = WifiStereoReceiver.crop(full, x: half, w: half, h: h) else { return }
-            onStereoFrame?(l, r, ts)
-        } else {
-            onStereoFrame?(full, full, ts)
+            // 声称并排双目，但整帧不是双倍宽 → 协议自相矛盾，按单目处理（协议 v3 §4）
+            if Double(w) / Double(h) >= 2.0 {
+                let half = w / 2
+                guard let l = WifiStereoReceiver.crop(full, x: 0, w: half, h: h),
+                      let r = WifiStereoReceiver.crop(full, x: half, w: half, h: h) else { return }
+                left = l
+                right = r
+            } else {
+                onEvent?(String(format: "flags 说并排双目但整帧 %d×%d 不是双倍宽，按单目处理", w, h))
+            }
         }
+
+        let frame = PodFrame(left: left, right: right, ts: ts,
+                             flags: flags, frameW: w, frameH: h)
+        onFrame?(frame)
+        // 兼容：老调用点只认三参数（单目时给同一帧，仅供纯显示，不参与深度）
+        onStereoFrame?(left, right ?? left, ts)
     }
 
     private func countStat() {

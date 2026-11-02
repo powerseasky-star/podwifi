@@ -32,12 +32,15 @@ struct VisionObstacle {
     let prob: Float
     /// 方位角：负=左，正=右，单位度
     let azimuthDeg: Double
-    /// 距离（米）——已优先用融合距离，无融合则用画面内比例估计
+    /// 距离（米）——双目=视差换算，单目=ToF 或框高反推
     let meters: Double
     /// 高度（米），0 = 未知/不适用
     let heightM: Double
     /// 是否在行进走廊内（|方位角| ≤ 25°）
     let inPath: Bool
+    /// 距离是**估**出来的（单目框高反推 / 中心兜底），精度 ±40%
+    /// —— 播报要加"约"，且不能拿它当精确值
+    var estimated: Bool = false
 
     var azimuthWord: String {
         let a = abs(azimuthDeg)
@@ -48,8 +51,10 @@ struct VisionObstacle {
     }
 
     var text: String {
-        var s = String(format: "%@ %.1f 米 %@", azimuthWord, meters, name)
-        if heightM >= 0.2 && heightM <= 2.2 {
+        var s = String(format: "%@ %@%.1f 米 %@",
+                       azimuthWord, estimated ? "约 " : "", meters, name)
+        // 估算距离下高度也是估算的，叠两个"约"会说不清，所以省略高度
+        if !estimated && heightM >= 0.2 && heightM <= 2.2 {
             s += String(format: " 高约 %.1f 米", heightM)
         }
         if azimuthDeg.isFinite && abs(azimuthDeg) >= 12 {
@@ -84,9 +89,13 @@ final class ObstacleAlerter: ObservableObject {
     static let corridorDeg: Double = 25
     /// 只关心这么远以内的东西
     static let maxRange: Double = 3.2
-    /// 三档距离
+    /// 三档距离（双目）
     static let urgentM: Double = 1.0
     static let warnM: Double = 2.0
+    /// 三档距离（单目：距离是估的，±40%，阈值必须放宽，
+    /// 否则真实 1.0m 的目标因为算成 1.05m 就被降档，播报会变得不积极）
+    static let urgentMMono: Double = 1.3
+    static let warnMMono: Double = 2.4
     /// 置信度下限（比 YOLO 阈值 0.20 稍高，避免把误检念出来）
     static let minProb: Float = 0.28
 
@@ -105,6 +114,8 @@ final class ObstacleAlerter: ObservableObject {
     private var lastLabelDist: [String: Double] = [:]
     private var lastTofAlertAt: Date = .distantPast
     private var lastPodCmdAt: Date = .distantPast
+    /// 当前是否单目模式（影响分级阈值）
+    private(set) var monoMode = false
 
     private init() {}
 
@@ -112,9 +123,13 @@ final class ObstacleAlerter: ObservableObject {
 
     /// - Parameters:
     ///   - obstacles: 本帧已换算的目标（可为空）
-    ///   - tofMeters: 当前 ToF（米），0/nil = 无
-    func consider(obstacles: [VisionObstacle], tofMeters: Double?) {
+    ///   - tofMeters: 当前 ToF（米），nil = 无
+    ///   - monoMode: 单目模式（距离来自 ToF 或框高估算，阈值要放宽）
+    func consider(obstacles: [VisionObstacle], tofMeters: Double?, monoMode: Bool = false) {
         guard enabled else { return }
+        self.monoMode = monoMode
+        let urgentM = monoMode ? Self.urgentMMono : Self.urgentM
+        let warnM = monoMode ? Self.warnMMono : Self.warnM
 
         // 1) 粗筛：走廊内 + 够近 + 置信够
         let cand = obstacles.filter { o in
@@ -125,14 +140,14 @@ final class ObstacleAlerter: ObservableObject {
         }
 
         // 2) 排序：先按距离分档（近的一定优先），档内再按 类别×置信×方位×距离
-        let ranked = cand.sorted { risk($0) > risk($1) }
+        let ranked = cand.sorted { risk($0, urgentM: urgentM, warnM: warnM) > risk($1, urgentM: urgentM, warnM: warnM) }
         let top = ranked.first
 
         // 3) 界面永远显示最近 3 个（不节流，方便现场核对识别对不对）
         updateLine(ranked: Array(ranked.prefix(3)))
 
-        // 4) ToF 兜底：视觉没看到但 ToF 说很近
-        if let t = tofMeters, t > 0.05, t < 0.55 {
+        // 4) ToF 兜底：视觉没看到但 ToF 说很近（单目模式尤其重要：近距离虚焦，视觉本来就不可靠）
+        if let t = tofMeters, t > 0.05, t < (monoMode ? 0.75 : 0.55) {
             let visualClose = top.map { $0.inPath && $0.meters < 0.85 } ?? false
             if !visualClose, Date().timeIntervalSince(lastTofAlertAt) > 3.0 {
                 lastTofAlertAt = Date()
@@ -145,7 +160,7 @@ final class ObstacleAlerter: ObservableObject {
             level = 0
             return
         }
-        level = levelFor(o)
+        level = levelFor(o, urgentM: urgentM, warnM: warnM)
 
         // 5) 节流 + 冷却
         let key = o.name
@@ -205,21 +220,23 @@ final class ObstacleAlerter: ObservableObject {
         ("门", 1.00), ("垃圾桶", 0.95), ("树", 0.85), ("坡道", 0.70)
     ]
 
-    private func risk(_ o: VisionObstacle) -> Double {
-        // 🔴 距离分档**先于**类别权重（v0.6.0 第一版这里是纯乘积，实测排序反了：
+    private func risk(_ o: VisionObstacle, urgentM: Double, warnM: Double) -> Double {
+        // 🔴 距离分档**先于**类别权重（v0.6.0 第一版这里是纯乘积，核验时排序反了：
         //    2.0m 的车辆(1.70) 压过了 1.0m 的行人(1.15)，因为 1.70/1.15=1.48 >
         //    距离项的 2.35/1.35=1.74 差得不多，再乘上方位衰减就翻了。
         //    导盲第一条铁律：**近的就是急的**。所以先分档，同档内再比类别/方位。）
         let tier: Double
-        if o.meters < Self.urgentM { tier = 3.0 }        // <1.0m
-        else if o.meters < Self.warnM { tier = 2.0 }     // <2.0m
-        else { tier = 1.0 }                              // <3.2m
+        if o.meters < urgentM { tier = 3.0 }
+        else if o.meters < warnM { tier = 2.0 }
+        else { tier = 1.0 }
         let w = weight(of: o.name)
         // 方位衰减：正前方 1.0，50° 处 0.6
         let az = 1.0 - min(abs(o.azimuthDeg) / 75.0, 0.6)
         let near = 1.0 / (o.meters + 0.35)
-        // tier × 10 保证跨档不可逾越；档内由 类别×置信×方位×距离 决定
-        return tier * 10.0 + w * Double(o.prob) * az * near
+        // 估算距离（单目）降权：同样的米数，估出来的不如测出来的可信
+        let trust = o.estimated ? 0.6 : 1.0
+        // tier × 10 保证跨档不可逾越；档内由 类别×置信×方位×距离×可信度 决定
+        return tier * 10.0 + w * Double(o.prob) * az * near * trust
     }
 
     /// 类别权重：越大越"要命"。
@@ -230,9 +247,9 @@ final class ObstacleAlerter: ObservableObject {
         return 1.0
     }
 
-    private func levelFor(_ o: VisionObstacle) -> Int {
-        if o.meters < Self.urgentM && o.inPath { return 3 }
-        if o.meters < Self.warnM { return 2 }
+    private func levelFor(_ o: VisionObstacle, urgentM: Double, warnM: Double) -> Int {
+        if o.meters < urgentM && o.inPath { return 3 }
+        if o.meters < warnM { return 2 }
         return 1
     }
 

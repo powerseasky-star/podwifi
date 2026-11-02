@@ -28,7 +28,13 @@ struct DepthTuningView: View {
         Form {
                 // MARK: 实时诊断
                 Section(header: Text("实时诊断（对着目标站着看这几行）"),
-                        footer: Text("「有效」低于 10% 说明这个场景纹理不足或参数太严；「差」是与 ToF 的相对误差。")) {
+                        footer: Text(vision.camera.profile.depthCapable
+                                     ? "「有效」低于 10% 说明这个场景纹理不足或参数太严；「差」是与 ToF 的相对误差。"
+                                     : "⚠️ 当前相机是单目（无基线），下面的 SAD 参数与自检对本机型不生效——单目只靠 ToF。")) {
+                    LabeledRow(k: "相机", v: "\(vision.cameraText) · \(vision.depthModeText)")
+                    if !vision.cameraWarn.isEmpty {
+                        LabeledRow(k: "提示", v: "⚠︎ " + vision.cameraWarn)
+                    }
                     LabeledRow(k: "识别", v: vision.ready ? vision.detsText : "模型未加载")
                     LabeledRow(k: "融合", v: vision.depthText)
                     LabeledRow(k: "一致性", v: vision.fuseText)
@@ -49,8 +55,10 @@ struct DepthTuningView: View {
                         }
                     }
                     .disabled(testing)
+                    .opacity(vision.camera.profile.depthCapable ? 1 : 0.4)
 
                     Button("用 ToF 校准 A（需 ToF 有数）") { calibrate() }
+                        .opacity(vision.camera.profile.depthCapable ? 1 : 0.4)
                     Button("按当前读数重新建议参数") { advise() }
                     Button("恢复默认参数") {
                         DepthParams.reset()

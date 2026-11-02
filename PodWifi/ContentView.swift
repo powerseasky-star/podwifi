@@ -25,6 +25,7 @@ struct ContentView: View {
 
 struct WifiView: View {
     @StateObject private var model = ReceiverModel()
+    @ObservedObject private var vision = VisionHub.shared
 
     var body: some View {
         VStack(spacing: 8) {
@@ -48,6 +49,26 @@ struct WifiView: View {
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
+
+            // v0.7.0：相机自动识别结果（型号 + 模式 + 识别来源）
+            HStack(spacing: 6) {
+                Text("相机：\(vision.cameraText)")
+                    .font(.caption)
+                    .foregroundStyle(vision.camera.profile.depthCapable ? Color.green : Color.orange)
+                    .lineLimit(1)
+                Spacer()
+                Text(vision.depthModeText).font(.caption2).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            if !vision.cameraWarn.isEmpty {
+                Text("⚠︎ " + vision.cameraWarn)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
 
             ZStack {
                 Color.black
@@ -152,15 +173,22 @@ final class ReceiverModel: ObservableObject {
                 }
             }
         }
-        r.onStereoFrame = { [weak self] left, right, ts in
+        // v0.7.0：协议 v3 的相机身份声明（连上立刻来一次，之后约 5s 一次）
+        r.onCamInfo = { info in
+            Task { @MainActor in
+                VisionHub.shared.acceptCamInfo(info)
+            }
+        }
+        r.onFrame = { [weak self] f in
             guard let self = self else { return }
-            // v0.4.0：把左右眼同时交给视觉中枢（YOLO 检测 + 双目深度），内部已限 5fps
-            VisionHub.shared.process(left: left, right: right, ts: ts)
-            let ciImg = CIImage(cvPixelBuffer: left)
+            // 整帧元信息一起交给视觉中枢：相机识别、单目/双目分流都在里面做
+            VisionHub.shared.process(frame: f)
+            let ciImg = CIImage(cvPixelBuffer: f.left)
             guard let cg = self.ci.createCGImage(ciImg, from: ciImg.extent) else { return }
             let img = UIImage(cgImage: cg)
             let fps = r.fps
             let drops = r.dropFrames
+            let ts = f.ts
             Task { @MainActor in
                 let now = Date()
                 if now.timeIntervalSince(self.lastPaint) < 0.1 { return }   // UI 限 10fps
