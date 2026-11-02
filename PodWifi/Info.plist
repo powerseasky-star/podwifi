@@ -31,5 +31,10 @@
 	<!-- iOS 14+ 连局域网 IP 必须声明，否则第一次连接会被系统静默拦截 -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>需要访问局域网，以接收导盲 Pod 推送的实时双目视频画面。</string>
+	<!-- v0.2.0：BLE 必须声明，否则 CBCentralManager 初始化即崩溃 -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>需要蓝牙连接导盲 Pod，接收传感器数据与姿态，并下发导航指令。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>需要蓝牙连接导盲 Pod，接收传感器数据与姿态。</string>
 </dict>
 </plist>
