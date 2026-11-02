@@ -73,6 +73,35 @@ jobs:
           echo "--- 内部结构 ---"
           find Vendor/whisper.xcframework -maxdepth 3 | head -40
 
+      # v0.5.0：ncnn 官方 iOS 预编译静态库（arm64）。压缩包里可能是 ncnn.framework 或
+      # lib/libncnn.a + include/ncnn/*.h，两种布局都规整到 Vendor/ncnn/{include,lib}
+      # ⚠️ 必须在 xcodegen generate 之前完成（否则生成工程时找不到库路径）
+      - name: Fetch ncnn (iOS static lib)
+        run: |
+          set -euo pipefail
+          mkdir -p Vendor/ncnn/include Vendor/ncnn/lib
+          curl -fL --retry 3 --retry-delay 2 -o /tmp/ncnn.zip \
+            "https://github.com/Tencent/ncnn/releases/download/20260113/ncnn-20260113-ios.zip"
+          ls -lh /tmp/ncnn.zip
+          unzip -q /tmp/ncnn.zip -d /tmp/ncnn
+          echo "--- 解压后结构（前 40 项）---"
+          find /tmp/ncnn -maxdepth 3 | head -40
+
+          HDR=$(find /tmp/ncnn -type f -name net.h -path "*/ncnn/*" | head -1)
+          if [ -z "$HDR" ]; then echo "::error::找不到 ncnn 头文件目录"; exit 1; fi
+          cp -R "$(dirname "$HDR")" Vendor/ncnn/include/ncnn
+          echo "头文件来自: $(dirname "$HDR")"
+
+          LIB=$(find /tmp/ncnn -name "libncnn.a" | head -1)
+          if [ -z "$LIB" ]; then
+            # 静态 framework：二进制本身就是一个归档
+            LIB=$(find /tmp/ncnn -type f -name "ncnn" -path "*.framework/*" | head -1)
+          fi
+          if [ -z "$LIB" ]; then echo "::error::找不到 ncnn 静态库"; exit 1; fi
+          cp "$LIB" Vendor/ncnn/lib/libncnn.a
+          echo "静态库来自: $LIB"
+          ls -lh Vendor/ncnn/lib Vendor/ncnn/include/ncnn | head -20
+
       - name: Generate Xcode project
         run: xcodegen generate
 

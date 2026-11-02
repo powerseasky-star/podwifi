@@ -11,6 +11,20 @@ final class AssistantEngine: ObservableObject {
     @Published var logs: [String] = []
     @Published var busy = false
     @Published var lastReply: String = ""
+    @Published var navActive = false
+    @Published var navStatus = ""
+    /// 连续导航会话（开启后持续播报拐点）
+    let nav = NavSession()
+
+    init() {
+        // 跨对象直接观察另一个 ObservableObject 的 @Published 不可靠，
+        // 所以让 NavSession 主动回推状态，本对象再触发界面刷新。
+        nav.onChange = { [weak self] active, status in
+            guard let self = self else { return }
+            self.navActive = active
+            self.navStatus = status
+        }
+    }
 
     private let link = PodLink.shared
     private let st = AppSettings.shared
@@ -108,21 +122,30 @@ final class AssistantEngine: ObservableObject {
                                                      fromLat: me.coordinate.latitude,
                                                      toLng: poi.lng, toLat: poi.lat)
             let minutes = max(1, route.durationS / 60)
-            let first = route.steps.first?.instruction ?? "沿当前方向前进"
-            let dm = Double(route.steps.first?.distanceM ?? 0) / 10.0
 
             let line = String(format: "%@，全程%d米约%d分钟", poi.name, route.distanceM, minutes)
             lastReply = line
             Announcer.shared.say(line)
-            log("路线：\(line)；首步：\(first)")
+            log("路线：\(line)；共 \(route.steps.count) 段")
 
-            // 首步下发（固件自己播预录音，转弯提示不能等手机 TTS）
-            link.sendNavCmd(action: PodCommand.NavAction.straight.rawValue, distMeters: dm / 10.0)
-            log("→ 下发 NAVCMD straight")
+            // 启动连续导航：到拐点前 25 米自动播报 + 下发马达/预录音
+            nav.start(route: route, placeName: poi.name)
+            if let first = route.steps.first {
+                log("首段：\(first.instruction)")
+                PodLink.shared.sendNavCmd(action: PodCommand.NavAction.straight.rawValue,
+                                          distMeters: Double(first.distanceM) / 10.0)
+            }
         } catch {
             log("导航失败：\(error.localizedDescription)")
             Announcer.shared.say("导航没成功，再说一次")
         }
+    }
+
+    /// 停止导航（界面上有按钮，语音"停止导航"也会走到这里）
+    func stopNav() {
+        nav.stop(reason: "已手动结束")
+        log("导航已结束")
+        Announcer.shared.say("导航已结束")
     }
 
     // MARK: - 大模型

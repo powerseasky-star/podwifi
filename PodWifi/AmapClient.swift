@@ -18,6 +18,8 @@ enum AmapClient {
     struct RouteStep {
         let instruction: String
         let distanceM: Int
+        /// 该步行段折线（lng,lat 顺序），用于偏航判定与"到下一拐点"距离
+        let points: [(lng: Double, lat: Double)]
     }
 
     struct Route {
@@ -97,7 +99,17 @@ enum AmapClient {
             for s in raw {
                 let ins = (s["instruction"] as? String) ?? ""
                 let d = Int((s["distance"] as? String) ?? "0") ?? 0
-                if !ins.isEmpty { steps.append(RouteStep(instruction: ins, distanceM: d)) }
+                // 高德返回 polyline="lng,lat;lng,lat;..."
+                var pts: [(lng: Double, lat: Double)] = []
+                if let poly = s["polyline"] as? String, !poly.isEmpty {
+                    for seg in poly.split(separator: ";") {
+                        let kv = seg.split(separator: ",")
+                        if kv.count == 2, let lng = Double(kv[0]), let lat = Double(kv[1]) {
+                            pts.append((lng, lat))
+                        }
+                    }
+                }
+                if !ins.isEmpty { steps.append(RouteStep(instruction: ins, distanceM: d, points: pts)) }
             }
         }
         return Route(distanceM: dist, durationS: dur, steps: steps,

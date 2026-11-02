@@ -36,6 +36,7 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     private let m = CLLocationManager()
     private(set) var last: CLLocation?
     private var waiters: [CheckedContinuation<CLLocation?, Never>] = []
+    private var onUpdate: ((CLLocation) -> Void)?
 
     private override init() {
         super.init()
@@ -72,7 +73,27 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if let l = locations.last {
+            last = l
+            onUpdate?(l)
+        }
         finish(locations.last)
+    }
+
+    // MARK: - 连续定位（导航会话用）
+
+    /// 开始持续上报位置（约 1 次/秒，精度最好）
+    func startUpdates(_ handler: @escaping (CLLocation) -> Void) {
+        prepare()
+        onUpdate = handler
+        m.desiredAccuracy = kCLLocationAccuracyBest
+        m.distanceFilter = 3          // 走 3 米才回调，省电且够用
+        m.startUpdatingLocation()
+    }
+
+    func stopUpdates() {
+        onUpdate = nil
+        m.stopUpdatingLocation()
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

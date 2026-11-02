@@ -5,6 +5,7 @@ struct AssistantView: View {
     @StateObject private var eng = AssistantEngine()
     @StateObject private var asr = AsrEngine()
     @ObservedObject private var st = AppSettings.shared
+    @ObservedObject private var vision = VisionHub.shared
     @State private var text = ""
     @State private var showSettings = false
 
@@ -33,6 +34,27 @@ struct AssistantView: View {
             }
             .font(.caption)
             .padding(.horizontal)
+
+            // 视觉：YOLO 检测 + 双目深度（来自「无线」页的收流）
+            HStack(spacing: 8) {
+                Text(vision.ready ? "识别：\(vision.detsText)" : "识别：未加载")
+                    .lineLimit(1)
+                Spacer()
+                Text("深度：\(vision.depthText)").lineLimit(1)
+            }
+            .font(.caption2)
+            .foregroundColor(.secondary)
+            .padding(.horizontal)
+
+            // 导航进行中：显示当前指令 + 停止
+            if eng.navActive {
+                HStack {
+                    Text(eng.navStatus).font(.caption).foregroundColor(.blue).lineLimit(1)
+                    Spacer()
+                    Button("停止导航") { eng.stopNav() }.font(.caption)
+                }
+                .padding(.horizontal)
+            }
 
             // 语音识别区
             HStack(spacing: 10) {
@@ -147,6 +169,7 @@ struct AssistantView: View {
         }
         .onAppear {
             LocationProvider.shared.prepare()
+            VisionHub.shared.warmUp()
             // 识别结果直接交给同一套调度：本地命令 → 导航 → 大模型
             asr.onResult = { spoken in
                 Task { await eng.submit(spoken) }

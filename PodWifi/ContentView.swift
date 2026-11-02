@@ -152,8 +152,10 @@ final class ReceiverModel: ObservableObject {
                 }
             }
         }
-        r.onStereoFrame = { [weak self] left, _, ts in
+        r.onStereoFrame = { [weak self] left, right, ts in
             guard let self = self else { return }
+            // v0.4.0：把左右眼同时交给视觉中枢（YOLO 检测 + 双目深度），内部已限 5fps
+            VisionHub.shared.process(left: left, right: right, ts: ts)
             let ciImg = CIImage(cvPixelBuffer: left)
             guard let cg = self.ci.createCGImage(ciImg, from: ciImg.extent) else { return }
             let img = UIImage(cgImage: cg)

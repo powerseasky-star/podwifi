@@ -13,9 +13,14 @@ targets:
     platform: iOS
     sources:
       - path: PodWifi
-    # whisper.xcframework 由 CI 在构建前下载到 Vendor/（仓库不存 20MB+ 二进制）
-    # 🔴 embed 必须 true：实测 ipa 二进制里是 @rpath/whisper.framework/whisper（动态库），
-    #    embed=false 时 Frameworks/ 不会被打进 app，装机后启动即 dyld "Library not loaded" 闪退。
+        excludes:
+          - "Models/**"
+      # YOLO 模型（4.9MB）显式作为资源打包，避免被当成未知类型漏掉
+      - path: PodWifi/Models
+        buildPhase: resources
+    # 两个二进制依赖都由 CI 在构建前取到 Vendor/（仓库不存 20MB+ 二进制）
+    #  🔴 whisper 必须 embed：实测是动态库（@rpath/whisper.framework/whisper），
+    #     embed=false 时 Frameworks/ 不进 app，真机启动即 dyld 闪退。
     dependencies:
       - framework: Vendor/whisper.xcframework
         embed: true
@@ -23,18 +28,18 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mars.podwifi
-        MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "6"
+        MARKETING_VERSION: "0.5.0"
+        CURRENT_PROJECT_VERSION: "7"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: PodWifi/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         ENABLE_BITCODE: NO
-        # Swift 调用 PodWhisper（Objective-C++）需要桥接头
+        # Swift 调用 ObjC++（PodWhisper / PodYolo / PodDepth）需要桥接头
         SWIFT_OBJC_BRIDGING_HEADER: PodWifi/PodWifi-Bridging-Header.h
-        # whisper.cpp 是 C++，必须显式链 libc++
-        OTHER_LDFLAGS: "$(inherited) -lc++"
+        # whisper.cpp 与 ncnn 都是 C++，必须显式链 libc++
+        OTHER_LDFLAGS: "$(inherited) -lc++ -lncnn"
         CLANG_CXX_LANGUAGE_STANDARD: "c++17"
-        # 防御性写法：xcframework 内可能是 framework 包装，也可能只有 libxxx.a + Headers/。
-        # 两种布局都给出搜索路径（不存在的路径无害），避免因布局差异白白浪费一轮云端构建。
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/Headers $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/whisper.framework/Headers"
+        # ncnn 静态库与头文件由 CI 规整到固定位置；whisper 的两种可能布局也一并给出
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/include $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/Headers $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/whisper.framework/Headers"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/lib"

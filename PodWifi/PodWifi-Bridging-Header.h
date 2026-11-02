@@ -4,3 +4,5 @@
 //
 
 #import "PodWhisper.h"
+#import "PodYolo.h"
+#import "PodDepth.h"
