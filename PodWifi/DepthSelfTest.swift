@@ -84,7 +84,8 @@ enum DepthSelfTest {
         for halfD in targets {
             let shift = halfD * 2                    // 全分辨率位移
             let (l, r) = synthPair(shift: shift)
-            var got: Int32 = -1
+            // median 返回 Float（ObjC `- (float)medianInX0:...`），别和 Int32 混用
+            var gotM: Float = -1
             var ratio: Float = 0
             l.withUnsafeBufferPointer { lp in
                 r.withUnsafeBufferPointer { rp in
@@ -100,19 +101,20 @@ enum DepthSelfTest {
                                                       textureGate: Int32(params.textureGate)) {
                         // 取中间 60% 区域的中位数，避开左右边缘（那里本来就没有匹配）
                         let hw = Int32(res.width), hh = Int32(res.height)
-                        got = res.median(inX0: hw / 5, y0: hh / 5, x1: hw * 4 / 5, y1: hh * 4 / 5,
-                                         stride: 1)
+                        gotM = res.median(inX0: hw / 5, y0: hh / 5, x1: hw * 4 / 5, y1: hh * 4 / 5,
+                                          stride: 1)
                         ratio = res.validRatio()
                     }
                 }
             }
+            let got = Int(gotM)
             let d640 = Double(halfD) * 2.0 * (640.0 / Double(testWidth))
             // 期望值用同一套参数算，这样本自检只衡量 SAD 准确性；
             // calScale 的影响单独在报告末行显示（否则 ToF 校准之后这里会全线"失败"，误导）
             let zExpect = VisionHub.metersFromD640(d640, params: params) ?? 0
-            let zGot = VisionHub.metersFromD640(Double(got), params: params) ?? 0
+            let zGot = VisionHub.metersFromD640(gotM > 0 ? Double(gotM) : 0, params: params) ?? 0
             rows.append(Row(trueHalfD: halfD,
-                            gotHalfD: Int(got),
+                            gotHalfD: got,
                             validRatio: ratio,
                             d640: d640,
                             z: zGot,
