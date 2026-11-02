@@ -336,7 +336,8 @@ struct BleView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .padding(.horizontal)
                 .padding(.bottom, 8)
-                .onChange(of: model.logs.count) { _, _ in
+                .onChange(of: model.logs.count) { _ in
+                    // 注意：双参数版 onChange 是 iOS 17+，本工程最低 15.0，只能用单参数版
                     if let last = model.logs.indices.last {
                         withAnimation { proxy.scrollTo(last, anchor: .bottom) }
                     }
