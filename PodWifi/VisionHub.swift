@@ -128,7 +128,8 @@ final class VisionHub: ObservableObject {
         let hw = Int(d.width), hh = Int(d.height)
         let x0 = Int(Double(hw) * 0.30), x1 = Int(Double(hw) * 0.70)
         let y0 = Int(Double(hh) * 0.35), y1 = Int(Double(hh) * 0.75)
-        let halfD = d.medianInX0(Int32(x0), y0: Int32(y0), x1: Int32(x1), y1: Int32(y1))
+        // Swift 会把 ObjC 的 medianInX0:y0:x1:y1: 导入成 median(inX0:y0:x1:y1:)
+        let halfD = d.median(inX0: Int32(x0), y0: Int32(y0), x1: Int32(x1), y1: Int32(y1))
         guard halfD > 0 else { return nil }
 
         // 半分辨率视差 → 640 宽基准下的视差
@@ -136,7 +137,7 @@ final class VisionHub: ObservableObject {
         guard d640 > calC + 1.0 else { return nil }   // 太近会超量程，除以近零会炸
         let z = calA / (d640 - calC)
         guard z > 0.05, z < 30 else { return nil }
-        return DepthReading(distance: z, disparity640: d640, validRatio: d.validRatio)
+        return DepthReading(distance: z, disparity640: d640, validRatio: d.validRatio())
     }
 
     /// CVPixelBuffer(BGRA) → 灰度（亮度加权），返回紧凑缓冲
