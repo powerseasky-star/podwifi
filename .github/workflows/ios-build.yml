@@ -48,6 +48,31 @@ jobs:
           brew install xcodegen
           xcodegen --version
 
+      # v0.4.0：whisper.cpp 用官方预编译 XCFramework（不用自己编），构建期取到 Vendor/
+      # 仓库里不存这 20MB+ 二进制；压缩包内部层级随版本可能变化，所以用 find 定位
+      - name: Fetch whisper.xcframework
+        run: |
+          set -euo pipefail
+          mkdir -p Vendor
+          curl -fL --retry 3 --retry-delay 2 -o /tmp/whisper.zip \
+            "https://github.com/ggml-org/whisper.cpp/releases/download/v1.7.5/whisper-v1.7.5-xcframework.zip"
+          ls -lh /tmp/whisper.zip
+          shasum -a 256 /tmp/whisper.zip
+          unzip -q /tmp/whisper.zip -d /tmp/whisper
+          XC=$(find /tmp/whisper -maxdepth 4 -name "whisper.xcframework" -type d | head -1)
+          if [ -z "$XC" ]; then
+            echo "::error::压缩包里找不到 whisper.xcframework"
+            find /tmp/whisper -maxdepth 3 | head -40
+            exit 1
+          fi
+          echo "found: $XC"
+          rm -rf Vendor/whisper.xcframework
+          cp -R "$XC" Vendor/
+          echo "--- Vendor 内容 ---"
+          ls -la Vendor
+          echo "--- 内部结构 ---"
+          find Vendor/whisper.xcframework -maxdepth 3 | head -40
+
       - name: Generate Xcode project
         run: xcodegen generate
 

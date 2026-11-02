@@ -41,3 +41,7 @@ ios_crash_report_v1_*.py
 # 本地自检脚本
 _swift_parencheck.py
 _*.py
+
+# CI 构建期下载的二进制，不入库
+Vendor/
+*.xcframework

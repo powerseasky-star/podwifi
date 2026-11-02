@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// 语音/导航页：输入指令 → 下发 / 导航 / 大模型 → 语音播报
+/// 语音/导航页：说话或打字 → 下发 / 导航 / 大模型 → 语音播报
 struct AssistantView: View {
     @StateObject private var eng = AssistantEngine()
+    @StateObject private var asr = AsrEngine()
     @ObservedObject private var st = AppSettings.shared
     @State private var text = ""
     @State private var showSettings = false
@@ -13,26 +14,77 @@ struct AssistantView: View {
         "开补光", "关补光", "测试摔倒", "恢复自动"
     ]
 
+    /// 麦克风按钮标题由三态决定：缺模型 / 可说话 / 正在听
+    private var micTitle: String {
+        if !asr.isReady { return WhisperModel.exists ? "加载模型" : "下载模型" }
+        return asr.listening ? "停止" : "说话"
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // 状态行
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Text(PodLink.shared.isConnected ? "蓝牙：已连接" : "蓝牙：未连接")
                     .foregroundColor(PodLink.shared.isConnected ? .green : .orange)
-                Text(st.hasAmap ? "高德：已配" : "高德：未配")
-                    .foregroundColor(st.hasAmap ? .green : .gray)
-                Text(st.hasLlm ? "大模型：已配" : "大模型：未配")
-                    .foregroundColor(st.hasLlm ? .green : .gray)
+                Text(st.hasAmap ? "高德✓" : "高德✗").foregroundColor(st.hasAmap ? .green : .gray)
+                Text(st.hasLlm ? "模型✓" : "模型✗").foregroundColor(st.hasLlm ? .green : .gray)
                 Spacer()
-                Button("设置") { showSettings = true }
-                    .font(.caption)
+                Button("设置") { showSettings = true }.font(.caption)
             }
             .font(.caption)
             .padding(.horizontal)
 
-            // 输入
+            // 语音识别区
+            HStack(spacing: 10) {
+                Button {
+                    if !asr.isReady {
+                        if WhisperModel.exists {
+                            asr.loadModelIfNeeded()
+                        } else {
+                            Task { await asr.downloadModel(urlString: st.whisperURL) }
+                        }
+                    } else if asr.listening {
+                        asr.stopAndDecode()
+                    } else {
+                        asr.start()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: asr.listening ? "stop.circle.fill" : "mic.circle.fill")
+                        Text(micTitle)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(asr.listening ? Color.red.opacity(0.85) : Color.green.opacity(0.18))
+                    .foregroundColor(asr.listening ? .white : .primary)
+                    .cornerRadius(16)
+                }
+                .disabled(asr.decoding)
+
+                // 音量指示（录音时才有意义）
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.gray.opacity(0.2))
+                        Capsule()
+                            .fill(asr.level > 0.012 ? Color.green : Color.orange)
+                            .frame(width: max(2, min(1, CGFloat(asr.level) * 12) * g.size.width))
+                    }
+                }
+                .frame(height: 8)
+
+                Text(asr.state).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+            }
+            .padding(.horizontal)
+
+            if !asr.lastText.isEmpty {
+                Text("听到：\(asr.lastText)")
+                    .font(.footnote).foregroundColor(.blue)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
+
+            // 文字输入（语音不好用时兜底）
             HStack {
-                TextField("说点什么，比如：导航去最近的地铁站", text: $text)
+                TextField("也可以直接打字，比如：导航去最近的地铁站", text: $text)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .disabled(eng.busy)
                 Button(eng.busy ? "…" : "发送") {
@@ -50,8 +102,7 @@ struct AssistantView: View {
                     ForEach(quickItems, id: \.self) { item in
                         Button(item) { eng.quick(item) }
                             .font(.caption)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
                             .background(Color.blue.opacity(0.12))
                             .cornerRadius(14)
                     }
@@ -59,7 +110,6 @@ struct AssistantView: View {
                 .padding(.horizontal)
             }
 
-            // 最近一次回复
             if !eng.lastReply.isEmpty {
                 Text("回复：\(eng.lastReply)")
                     .font(.footnote)
@@ -95,7 +145,14 @@ struct AssistantView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView().environmentObject(st)
         }
-        .onAppear { LocationProvider.shared.prepare() }
+        .onAppear {
+            LocationProvider.shared.prepare()
+            // 识别结果直接交给同一套调度：本地命令 → 导航 → 大模型
+            asr.onResult = { spoken in
+                Task { await eng.submit(spoken) }
+            }
+            asr.loadModelIfNeeded()
+        }
     }
 }
 
@@ -120,6 +177,13 @@ struct SettingsView: View {
                     TextField("base URL", text: $st.llmBase)
                     TextField("model", text: $st.llmModel)
                     TextField("api key", text: $st.llmKey)
+                }
+                Section(header: Text("语音识别（whisper.cpp）"),
+                        footer: Text("默认 base-q5_1（约 57MB，中文可用）。下载源可改成自己的镜像或局域网地址。")) {
+                    TextField("模型下载地址", text: $st.whisperURL)
+                        .font(.system(size: 12))
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
                 }
                 Section {
                     Button("完成") { presentation.wrappedValue.dismiss() }

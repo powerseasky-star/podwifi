@@ -18,6 +18,9 @@ final class AppSettings: ObservableObject {
     @Published var llmKey: String { didSet { d.set(llmKey, forKey: "llmKey") } }
     @Published var llmModel: String { didSet { d.set(llmModel, forKey: "llmModel") } }
 
+    /// whisper 模型下载地址（默认 hf-mirror 镜像，可改）
+    @Published var whisperURL: String { didSet { d.set(whisperURL, forKey: "whisperURL") } }
+
     private init() {
         wifiHost = d.string(forKey: "wifiHost") ?? "192.168.1.23"
         wifiPort = d.string(forKey: "wifiPort") ?? "5000"
@@ -25,6 +28,7 @@ final class AppSettings: ObservableObject {
         llmBase = d.string(forKey: "llmBase") ?? "https://api.deepseek.com/v1"
         llmKey = d.string(forKey: "llmKey") ?? ""
         llmModel = d.string(forKey: "llmModel") ?? "deepseek-chat"
+        whisperURL = d.string(forKey: "whisperURL") ?? WhisperModel.defaultURL
     }
 
     var hasAmap: Bool { !amapKey.trimmingCharacters(in: .whitespaces).isEmpty }
