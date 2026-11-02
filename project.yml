@@ -29,7 +29,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mars.podwifi
         MARKETING_VERSION: "0.5.0"
-        CURRENT_PROJECT_VERSION: "8"
+        CURRENT_PROJECT_VERSION: "9"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: PodWifi/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
@@ -41,5 +41,5 @@ targets:
         OTHER_LDFLAGS: "$(inherited) -lc++ -lncnn"
         CLANG_CXX_LANGUAGE_STANDARD: "c++17"
         # ncnn 静态库与头文件由 CI 规整到固定位置；whisper 的两种可能布局也一并给出
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/include $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/Headers $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/whisper.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/include $(SRCROOT)/Vendor/ncnn/include/ncnn $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/Headers $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/whisper.framework/Headers"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/lib"

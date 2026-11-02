@@ -10,7 +10,14 @@
 #include <cmath>
 #include <vector>
 
+// ncnn 头文件布局随打包方式不同，三种写法都试
+#if __has_include(<ncnn/net.h>)
+#include <ncnn/net.h>
+#elif __has_include("ncnn/net.h")
+#include "ncnn/net.h"
+#else
 #include "net.h"
+#endif
 
 @implementation PodDet
 @end
