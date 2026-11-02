@@ -1,4 +1,11 @@
-# iOS 云端编译流水线（GitHub Actions）
+# iOS 云端编译流水线（GitHub Actions）—— v2 / 2026-11-02
+#
+# v1 → v2 的唯一改动：**删掉 push.paths 过滤器**。
+#   原因（2026-11-02 实测）：v1 用 paths 白名单（PodWifi/**、project.yml、workflow 自身），
+#   而那次推送的 HEAD 提交只改了 .gitattributes → 不匹配任何一条 → GitHub 判定"无需运行"：
+#   workflow 被识别为 active，却 0 次运行（pushed_at 与 workflow created_at 同一秒，排除延迟）。
+#   过滤器省的是额度，毁的是"推了却不跑"的确定性；这里宁可每次都跑，靠 concurrency 去重。
+#   旧版已快照到 backups/ios-build_v1_20261101_带paths过滤.yml
 #
 # 产出：未签名的 PodWifi-unsigned.ipa
 # 装机：在 Windows 上用 Sideloadly / AltStore，用你自己的 Apple ID 自签后装到 iPhone
@@ -6,7 +13,6 @@
 #
 # ⚠️ 重要：private 仓库跑 macOS runner 会按 **10 倍** 计额度，且 GitHub 要求账号已绑定支付方式；
 #          public 仓库的 macOS runner **完全免费且不限量**。
-#          本仓库只有 App 源码、不含任何密钥，建议公开发布最省事。
 #
 # 触发方式：push 到 main，或在 Actions 页面点 "Run workflow"
 
@@ -16,10 +22,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths:
-      - 'PodWifi/**'
-      - 'project.yml'
-      - '.github/workflows/ios-build.yml'
 
 # 同一分支只保留最新一次运行，避免连续 push 烧额度
 concurrency:

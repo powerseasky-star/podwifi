@@ -23,3 +23,11 @@ repo.txt
 *.mobileprovision
 *.p7b
 *.cer
+
+# 一次性诊断脚本，不入库
+_probe_write.py
+_parse_test.bat
+
+# 本地快照 / 诊断脚本，不入库
+backups/
+check_actions_v1_20261102.py
