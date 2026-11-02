@@ -14,15 +14,17 @@ targets:
     sources:
       - path: PodWifi
     # whisper.xcframework 由 CI 在构建前下载到 Vendor/（仓库不存 20MB+ 二进制）
+    # 🔴 embed 必须 true：实测 ipa 二进制里是 @rpath/whisper.framework/whisper（动态库），
+    #    embed=false 时 Frameworks/ 不会被打进 app，装机后启动即 dyld "Library not loaded" 闪退。
     dependencies:
       - framework: Vendor/whisper.xcframework
-        embed: false
+        embed: true
         link: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mars.podwifi
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "5"
+        CURRENT_PROJECT_VERSION: "6"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: PodWifi/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
