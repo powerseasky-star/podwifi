@@ -6,8 +6,19 @@ struct AssistantView: View {
     @StateObject private var asr = AsrEngine()
     @ObservedObject private var st = AppSettings.shared
     @ObservedObject private var vision = VisionHub.shared
+    @ObservedObject private var alerter = ObstacleAlerter.shared
     @State private var text = ""
     @State private var showSettings = false
+
+    /// 避障等级 → 颜色：3 紧急红、2 警告橙、1 提示蓝
+    private var hazardColor: Color {
+        switch alerter.level {
+        case 3: return .red
+        case 2: return .orange
+        case 1: return .blue
+        default: return .secondary
+        }
+    }
 
     private let quickItems = [
         "开灯", "关灯", "开灯带", "关灯带",
@@ -35,12 +46,31 @@ struct AssistantView: View {
             .font(.caption)
             .padding(.horizontal)
 
-            // 视觉：YOLO 检测 + 双目深度（来自「无线」页的收流）
-            HStack(spacing: 8) {
-                Text(vision.ready ? "识别：\(vision.detsText)" : "识别：未加载")
+            // 视觉：YOLO 检测 + 双目↔ToF 融合深度 + 避障播报（来自「无线」页的收流）
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(vision.ready ? "识别：\(vision.detsText)" : "识别：未加载")
+                        .lineLimit(1)
+                    Spacer()
+                    Text("深度：\(vision.depthText)").lineLimit(1)
+                }
+                HStack(spacing: 8) {
+                    Toggle("避障", isOn: $alerter.enabled)
+                        .labelsHidden()
+                        .scaleEffect(0.7)
+                        .frame(width: 34)
+                    Text(alerter.line)
+                        .lineLimit(1)
+                        .foregroundColor(hazardColor)
+                    Spacer()
+                    Text("\(alerter.spokenCount)").font(.caption2)
+                }
+                Text("\(vision.tofText)   \(vision.diagText)")
                     .lineLimit(1)
-                Spacer()
-                Text("深度：\(vision.depthText)").lineLimit(1)
+                    .foregroundColor(.secondary)
+                if !vision.fuseText.isEmpty && vision.fuseText != "—" {
+                    Text(vision.fuseText).lineLimit(1).foregroundColor(.secondary)
+                }
             }
             .font(.caption2)
             .foregroundColor(.secondary)
@@ -207,6 +237,14 @@ struct SettingsView: View {
                         .font(.system(size: 12))
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
+                }
+                Section(header: Text("视觉 / 双目深度"),
+                        footer: Text("SAD 参数、合成自检（不用真机）、用 ToF 当真值校准 A —— 都能现场调，不用重发版。")) {
+                    // 用 destination: 形式（iOS 13+）；`NavigationLink("t") { Dest() }`
+                    // 那个尾随闭包写法是 iOS 16 才有的，本工程最低 15.0，会直接编译报可用性错误
+                    NavigationLink(destination: DepthTuningView()) {
+                        Text("深度调参 / 自检 / ToF 校准")
+                    }
                 }
                 Section {
                     Button("完成") { presentation.wrappedValue.dismiss() }

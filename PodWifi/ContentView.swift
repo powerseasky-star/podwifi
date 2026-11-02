@@ -203,8 +203,15 @@ final class ReceiverModel: ObservableObject {
             return
         }
         var parts: [String] = []
-        if let v = o["tof"] as? Double { parts.append(String(format: "ToF %.2fm", v)) }
-        if let v = o["ultra"] as? Double { parts.append(String(format: "超声 %.2fm", v)) }
+        if let v = o["tof"] as? Double {
+            parts.append(String(format: "ToF %.2fm", v))
+            // v0.6.0：Wi-Fi 通道的 tof 单位是**米**，直接进总线（与 BLE 的毫米路径分开入口）
+            SensorBus.shared.updateToF(meters: v, source: "wifi")
+        }
+        if let v = o["ultra"] as? Double {
+            parts.append(String(format: "超声 %.2fm", v))
+            SensorBus.shared.updateUltra(meters: v, source: "wifi")
+        }
         if let v = o["lux"] as? Int { parts.append("光 \(v)lx") }
         if let v = o["tilt"] as? Int { parts.append("倾角 \(v)°") }
         if let v = o["batt"] as? Int { parts.append("电 \(v)%") }
@@ -414,6 +421,9 @@ final class BleModel: ObservableObject {
             self.sensorLine = parts.joined(separator: "  ")
             // 给语音助手做大模型上下文用
             PodLink.lastSensorText = self.sensorLine
+            // v0.6.0：把 ToF/超声灌进统一总线，供深度融合与避障使用（单位在此转成米）
+            SensorBus.shared.updateToF(binaryMm: s.tofMm, source: "ble")
+            SensorBus.shared.updateUltra(binaryMm: s.ultraMm, source: "ble")
         }
         cli.onPose = { [weak self] p in
             guard let self = self else { return }

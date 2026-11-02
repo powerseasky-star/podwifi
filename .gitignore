@@ -45,3 +45,9 @@ _*.py
 # CI 构建期下载的二进制，不入库
 Vendor/
 *.xcframework
+
+# v0.6.0 本地核验脚本与输出（不上行，只留本地现场）
+check_symbols_v*_20261102.py
+verify_v060_*.py
+check_symbols_*out_*.txt
+verify_v060_out_*.txt

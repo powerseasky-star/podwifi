@@ -27,13 +27,22 @@
 }
 
 - (float)medianInX0:(int)x0 y0:(int)y0 x1:(int)x1 y1:(int)y1 {
+    return [self medianInX0:x0 y0:y0 x1:x1 y1:y1 stride:1];
+}
+
+- (float)medianInX0:(int)x0 y0:(int)y0 x1:(int)x1 y1:(int)y1 stride:(int)stride {
     std::vector<int16_t> v;
     const int16_t *p = (const int16_t *)_buffer.bytes;
+    const int st = std::max(1, stride);
     int ax = std::max(0, x0), ay = std::max(0, y0);
     int bx = std::min(_width - 1, x1), by = std::min(_height - 1, y1);
-    for (int y = ay; y <= by; y++) {
-        for (int x = ax; x <= bx; x++) {
-            int16_t d = p[y * _width + x];
+    if (bx < ax || by < ay) { return -1.f; }
+    // 预留容量，避免上万次 push_back 的反复扩容
+    v.reserve((size_t)((bx - ax) / st + 1) * (size_t)((by - ay) / st + 1));
+    for (int y = ay; y <= by; y += st) {
+        const int16_t *row = p + y * _width;
+        for (int x = ax; x <= bx; x += st) {
+            int16_t d = row[x];
             if (d >= 0) { v.push_back(d); }
         }
     }
@@ -62,6 +71,26 @@
                                    width:(int)width
                                   height:(int)height
                             maxDisparity:(int)maxDisparity {
+    // v0.5.0 的默认参数 = 当年实测的一组：5x5 / 1.08 / 12 / lrc1 / 无纹理门限
+    return [self computeLeft:left right:right width:width height:height
+                maxDisparity:maxDisparity
+                windowRadius:2
+               uniquenessPct:1.08f
+            uniquenessMargin:12
+                      lrcTol:1
+                 textureGate:0];
+}
+
++ (nullable PodDepthResult *)computeLeft:(const uint8_t *)left
+                                   right:(const uint8_t *)right
+                                   width:(int)width
+                                  height:(int)height
+                            maxDisparity:(int)maxDisparity
+                            windowRadius:(int)windowRadius
+                          uniquenessPct:(float)uniquenessPct
+                       uniquenessMargin:(int)uniquenessMargin
+                                  lrcTol:(int)lrcTol
+                             textureGate:(int)textureGate {
     if (left == nullptr || right == nullptr || width < 32 || height < 32) { return nil; }
 
     const int hw = width / 2;
@@ -83,14 +112,31 @@
     }
 
     const int maxD = std::max(4, std::min(maxDisparity, hw - 8));
-    const int R_WIN = 2;              // 5x5 窗口
-    const int margin = 12;            // 前向一致性裕度（SAD 差值需小于 best*1.08 + margin）
+    const int R_WIN = std::max(1, std::min(windowRadius, 4));   // 3x3 ~ 9x9
+    const int WIN = 2 * R_WIN;
+    const int margin = std::max(0, uniquenessMargin);
+    const float upct = (uniquenessPct < 1.0f) ? 1.0f : uniquenessPct;
+    const int gate = std::max(0, textureGate);
 
     std::vector<int16_t> disp(hw * hh, -1);
 
     // 2) 左→右 SAD
     for (int y = R_WIN; y < hh - R_WIN; y++) {
         for (int x = R_WIN; x < hw - R_WIN; x++) {
+            // 纹理门限：先看左图这个窗口本身有没有起伏，纯色区域直接跳过（省时间也省误匹配）
+            if (gate > 0) {
+                int mn = 255, mx = 0;
+                for (int dy = -R_WIN; dy <= R_WIN; dy++) {
+                    const uint8_t *lp = &L[(y + dy) * hw + (x - R_WIN)];
+                    for (int dx = 0; dx <= WIN; dx++) {
+                        int v = lp[dx];
+                        if (v < mn) { mn = v; }
+                        if (v > mx) { mx = v; }
+                    }
+                }
+                if (mx - mn < gate) { continue; }
+            }
+
             uint32_t bestCost = 0xFFFFFFFFu;
             int best = -1;
             uint32_t secondCost = 0xFFFFFFFFu;
@@ -101,7 +147,7 @@
                 for (int dy = -R_WIN; dy <= R_WIN; dy++) {
                     const uint8_t *lp = &L[(y + dy) * hw + (x - R_WIN)];
                     const uint8_t *rp = &R[(y + dy) * hw + (rx - R_WIN)];
-                    for (int dx = 0; dx <= 2 * R_WIN; dx++) {
+                    for (int dx = 0; dx <= WIN; dx++) {
                         int diff = (int)lp[dx] - (int)rp[dx];
                         cost += (uint32_t)(diff < 0 ? -diff : diff);
                     }
@@ -116,12 +162,13 @@
             }
             if (best < 0) { continue; }
             // 唯一性：最优明显好于次优，否则认为纹理不足/歧义
-            if ((float)secondCost < (float)bestCost * 1.08f + (float)margin) { continue; }
+            if ((float)secondCost < (float)bestCost * upct + (float)margin) { continue; }
             disp[y * hw + x] = (int16_t)best;
         }
     }
 
-    // 3) 左右一致性校验：把左视差投到右图，再在右图找最优，差<=1 才采纳
+    // 3) 左右一致性校验：把左视差投到右图，再在右图找最优，差<=lrcTol 才采纳
+    const int tol = std::max(1, lrcTol);
     for (int y = R_WIN; y < hh - R_WIN; y++) {
         for (int x = R_WIN; x < hw - R_WIN; x++) {
             int16_t d = disp[y * hw + x];
@@ -138,14 +185,14 @@
                 for (int dy = -R_WIN; dy <= R_WIN; dy++) {
                     const uint8_t *rp = &R[(y + dy) * hw + (rx - R_WIN)];
                     const uint8_t *lp = &L[(y + dy) * hw + (lx - R_WIN)];
-                    for (int dx = 0; dx <= 2 * R_WIN; dx++) {
+                    for (int dx = 0; dx <= WIN; dx++) {
                         int diff = (int)rp[dx] - (int)lp[dx];
                         cost += (uint32_t)(diff < 0 ? -diff : diff);
                     }
                 }
                 if (cost < bestCost) { bestCost = cost; best = dd; }
             }
-            if (best < 0 || std::abs(best - (int)d) > 1) { disp[y * hw + x] = -1; }
+            if (best < 0 || std::abs(best - (int)d) > tol) { disp[y * hw + x] = -1; }
         }
     }
 

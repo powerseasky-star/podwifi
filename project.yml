@@ -15,31 +15,28 @@ targets:
       - path: PodWifi
         excludes:
           - "Models/**"
-      # YOLO 模型（4.9MB）显式作为资源打包，避免被当成未知类型漏掉
-      - path: PodWifi/Models
+      # YOLO 妯″瀷锛?.9MB锛夋樉寮忎綔涓鸿祫婧愭墦鍖咃紝閬垮厤琚綋鎴愭湭鐭ョ被鍨嬫紡鎺?      - path: PodWifi/Models
         buildPhase: resources
-    # 两个二进制依赖都由 CI 在构建前取到 Vendor/（仓库不存 20MB+ 二进制）
-    #  🔴 whisper 必须 embed：实测是动态库（@rpath/whisper.framework/whisper），
-    #     embed=false 时 Frameworks/ 不进 app，真机启动即 dyld 闪退。
-    dependencies:
+    # 涓や釜浜岃繘鍒朵緷璧栭兘鐢?CI 鍦ㄦ瀯寤哄墠鍙栧埌 Vendor/锛堜粨搴撲笉瀛?20MB+ 浜岃繘鍒讹級
+    #  馃敶 whisper 蹇呴』 embed锛氬疄娴嬫槸鍔ㄦ€佸簱锛園rpath/whisper.framework/whisper锛夛紝
+    #     embed=false 鏃?Frameworks/ 涓嶈繘 app锛岀湡鏈哄惎鍔ㄥ嵆 dyld 闂€€銆?    dependencies:
       - framework: Vendor/whisper.xcframework
         embed: true
         link: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mars.podwifi
-        MARKETING_VERSION: "0.5.0"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "0.6.0"
+        CURRENT_PROJECT_VERSION: "11"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: PodWifi/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         ENABLE_BITCODE: NO
-        # Swift 调用 ObjC++（PodWhisper / PodYolo / PodDepth）需要桥接头
+        # Swift 璋冪敤 ObjC++锛圥odWhisper / PodYolo / PodDepth锛夐渶瑕佹ˉ鎺ュご
         SWIFT_OBJC_BRIDGING_HEADER: PodWifi/PodWifi-Bridging-Header.h
-        # whisper.cpp 与 ncnn 都是 C++，必须显式链 libc++
+        # whisper.cpp 涓?ncnn 閮芥槸 C++锛屽繀椤绘樉寮忛摼 libc++
         OTHER_LDFLAGS: "$(inherited) -lc++ -lncnn"
         CLANG_CXX_LANGUAGE_STANDARD: "c++17"
-        # ncnn 静态库与头文件由 CI 规整到固定位置；whisper 的两种可能布局也一并给出
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/include $(SRCROOT)/Vendor/ncnn/include/ncnn $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/Headers $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/whisper.framework/Headers"
+        # ncnn 闈欐€佸簱涓庡ご鏂囦欢鐢?CI 瑙勬暣鍒板浐瀹氫綅缃紱whisper 鐨勪袱绉嶅彲鑳藉竷灞€涔熶竴骞剁粰鍑?        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/include $(SRCROOT)/Vendor/ncnn/include/ncnn $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/Headers $(SRCROOT)/Vendor/whisper.xcframework/ios-arm64/whisper.framework/Headers"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Vendor/ncnn/lib"

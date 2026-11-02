@@ -24,18 +24,39 @@ NS_ASSUME_NONNULL_BEGIN
 /// 指定矩形区域内有效视差的中位数（半分辨率坐标）；无有效值返回 -1
 - (float)medianInX0:(int)x0 y0:(int)y0 x1:(int)x1 y1:(int)y1;
 
+/// v0.6.0：带抽样步长的中位数（YOLO 框内取距离用；stride=2 省 4 倍排序时间，误差 <0.5%）
+- (float)medianInX0:(int)x0 y0:(int)y0 x1:(int)x1 y1:(int)y1 stride:(int)stride;
+
 /// 有效像素占比（0..1），用于判断这一帧深度是否可信（弱纹理/过曝会很低）
 - (float)validRatio;
 @end
 
 @interface PodDepth : NSObject
 
+/// v0.5.0 的固定参数版本（保留：调用方不必改，内部转发到下面那个全参数版本）
 /// left/right 为同一尺寸的 8bit 灰度图。maxDisparity 以**半分辨率**计（建议 48）。
 + (nullable PodDepthResult *)computeLeft:(const uint8_t *)left
                                    right:(const uint8_t *)right
                                    width:(int)width
                                   height:(int)height
                             maxDisparity:(int)maxDisparity;
+
+/// v0.6.0：全部 SAD 参数可调（参数含义见 Swift 侧 DepthParams 注释）
+/// - windowRadius:     SAD 窗口半径，2=5x5、3=7x7
+/// - uniquenessPct:    次优/最优 代价比阈值，默认 1.08
+/// - uniquenessMargin: 额外绝对裕度，默认 12
+/// - lrcTol:           左右一致性容差（半分辨率像素），默认 1
+/// - textureGate:      5x5 窗口灰度 max-min 门限，0 = 关闭
++ (nullable PodDepthResult *)computeLeft:(const uint8_t *)left
+                                   right:(const uint8_t *)right
+                                   width:(int)width
+                                  height:(int)height
+                            maxDisparity:(int)maxDisparity
+                            windowRadius:(int)windowRadius
+                          uniquenessPct:(float)uniquenessPct
+                       uniquenessMargin:(int)uniquenessMargin
+                                  lrcTol:(int)lrcTol
+                             textureGate:(int)textureGate;
 
 @end
 
