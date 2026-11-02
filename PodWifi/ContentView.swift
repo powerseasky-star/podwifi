@@ -94,7 +94,8 @@ final class ReceiverModel: ObservableObject {
     @Published var speakEnabled = true
 
     private var rx: WifiStereoReceiver?
-    private let ci = CIContext()
+    // nonisolated：视频解码在后台队列，CIContext 本身线程安全，但不能从后台碰 MainActor 隔离的属性
+    nonisolated private let ci = CIContext()
     private let speaker = AVSpeechSynthesizer()
     private var lastPaint = Date.distantPast
 
@@ -111,16 +112,20 @@ final class ReceiverModel: ObservableObject {
         // 单目：收到整帧就用（并排时 receiver 会切成左眼）
         r.onStereoFrame = { [weak self] left, _, ts in
             guard let self = self else { return }
-            let now = Date()
-            if now.timeIntervalSince(self.lastPaint) < 0.1 { return }   // UI 限 10fps
-            self.lastPaint = now
+            // 重活（解码）留在后台队列；**凡是 MainActor 隔离的状态一律在主线程改**。
+            // 旧版在后台线程读写 @MainActor 的 lastPaint，是数据竞争（不是 2026-11-02 那次崩溃的主因，
+            // 但确实是错的，顺手修掉）。节流也移到主线程做，语义更清楚。
             let ciImg = CIImage(cvPixelBuffer: left)
             guard let cg = self.ci.createCGImage(ciImg, from: ciImg.extent) else { return }
             let img = UIImage(cgImage: cg)
+            let fps = r.fps
+            let drops = r.dropFrames
             Task { @MainActor in
+                let now = Date()
+                if now.timeIntervalSince(self.lastPaint) < 0.1 { return }   // UI 限 10fps
+                self.lastPaint = now
                 self.image = img
-                self.videoStat = String(format: "%.1f fps 丢%u ts=%u",
-                                        r.fps, r.dropFrames, ts)
+                self.videoStat = String(format: "%.1f fps 丢%u ts=%u", fps, drops, ts)
             }
         }
         r.onSensorJson = { [weak self] json in

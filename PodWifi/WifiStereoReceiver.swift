@@ -51,7 +51,12 @@ public final class WifiStereoReceiver {
     private let queue = DispatchQueue(label: "pod.wifi.video", qos: .userInitiated)
 
     private var conn: NWConnection?
-    private var buffer = Data()                 // 半包缓冲（TCP 是字节流，必须自己拼帧）
+    // ⚠️ 必须用 [UInt8] 而不是 Data：
+    //   Data 是切片语义，removeFirst() 之后 startIndex 会偏移，
+    //   再用绝对下标 subdata(in: 24..<total) 就会越界 trap
+    //   （2026-11-02 实机崩溃：EXC_BREAKPOINT in Data.subdata(in:) on queue pod.wifi.video）。
+    //   Array 的 startIndex 恒为 0，从根上避免这类错误。
+    private var buffer: [UInt8] = []             // 半包缓冲（TCP 是字节流，必须自己拼帧）
     private var running = false
     private var lastSeq: UInt32 = 0
     private var hasSeq = false
@@ -131,7 +136,7 @@ public final class WifiStereoReceiver {
             [weak self] data, _, isComplete, error in
             guard let self = self else { return }
             if let data = data, !data.isEmpty {
-                self.buffer.append(data)
+                self.buffer.append(contentsOf: data)
                 self.parseAvailable()
             }
             if isComplete || error != nil {
@@ -147,7 +152,7 @@ public final class WifiStereoReceiver {
 
     private func parseAvailable() {
         while buffer.count >= WifiStereoReceiver.headerLen {
-            let hdr = [UInt8](buffer.prefix(WifiStereoReceiver.headerLen))
+            let hdr = Array(buffer[0..<WifiStereoReceiver.headerLen])
             guard hdr[0] == 0x50, hdr[1] == 0x4F else {
                 // 失步：整条连接作废重连，比在这里猜偏移安全
                 onState?(false, "帧头魔数不匹配，重连")
@@ -179,7 +184,7 @@ public final class WifiStereoReceiver {
             let total = WifiStereoReceiver.headerLen + len
             guard buffer.count >= total else { return }   // 半包，等更多数据
 
-            let payload = buffer.subdata(in: WifiStereoReceiver.headerLen..<total)
+            let payload = Data(buffer[WifiStereoReceiver.headerLen..<total])
             buffer.removeFirst(total)
 
             if hasSeq, seq > lastSeq &+ 1 {
