@@ -54,8 +54,10 @@ public final class WifiStereoReceiver {
 
     /// 一帧视频（左右眼 + 元信息）。单目时 right == nil
     public var onFrame: ((PodFrame) -> Void)?
-    /// 协议 v3：相机身份声明（codec=0x13 CAMINFO），连上后立刻来一次、之后约 5s 一次
-    public var onCamInfo: ((PodCamInfo) -> Void)?
+    /// 协议 v3：相机身份声明（codec=0x13 CAMINFO），连上后立刻来一次、之后约 5s 一次。
+    /// 刻意是 internal 而非 public：`PodCamInfo` 是 internal 类型，
+    /// 声明成 public 会报 "property cannot be declared public because its type uses an internal type"。
+    var onCamInfo: ((PodCamInfo) -> Void)?
     /// 兼容旧调用点：只要左右眼（单目时 right 用 left 顶替，仅用于纯显示）
     public var onStereoFrame: ((CVPixelBuffer, CVPixelBuffer, UInt32) -> Void)?
     /// 状态回调：true=起流，false=断开/异常
