@@ -4,7 +4,7 @@ import UIKit
 import AVFoundation
 import CoreBluetooth
 
-// MARK: - 根视图：无线 / 蓝牙 两个模式
+// MARK: - 根视图：无线 / 蓝牙 / 语音导航 三个模式
 
 struct ContentView: View {
     var body: some View {
@@ -13,6 +13,8 @@ struct ContentView: View {
                 .tabItem { Label("无线", systemImage: "wifi") }
             BleView()
                 .tabItem { Label("蓝牙", systemImage: "dot.radiowaves.left.and.right") }
+            AssistantView()
+                .tabItem { Label("语音导航", systemImage: "waveform") }
         }
     }
 }
@@ -359,7 +361,8 @@ final class BleModel: ObservableObject {
     @Published var podRequest = ""
     @Published var logs: [String] = []
 
-    private let cli = BlePodClient()
+    // 共用全局唯一链路：否则「蓝牙」页和「语音导航」页各持一个 client，会互相抢连接
+    private let cli = PodLink.shared
     private let speaker = AVSpeechSynthesizer()
     private var known: Set<UUID> = []
 
@@ -407,6 +410,8 @@ final class BleModel: ObservableObject {
             if s.muted { st.append("静音") }
             if !st.isEmpty { parts.append("[" + st.joined(separator: ",") + "]") }
             self.sensorLine = parts.joined(separator: "  ")
+            // 给语音助手做大模型上下文用
+            PodLink.lastSensorText = self.sensorLine
         }
         cli.onPose = { [weak self] p in
             guard let self = self else { return }

@@ -149,6 +149,11 @@ final class BlePodClient: NSObject {
         write(type: 0x10, pl: [action, dm])
     }
 
+    /// 下发一条已解析的命令（0x03 CMD / 0x06 DEVICE_CTL）
+    func send(_ action: PodCommand.Action) {
+        write(type: action.type, pl: action.payload)
+    }
+
     // MARK: - 发送 / 组帧
 
     private func write(type: UInt8, pl: [UInt8]) {

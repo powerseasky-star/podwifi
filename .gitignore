@@ -37,3 +37,7 @@ _crashes/
 _precheck.py
 gh_push_via_api_v1_*.py
 ios_crash_report_v1_*.py
+
+# 本地自检脚本
+_swift_parencheck.py
+_*.py
